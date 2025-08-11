@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- STREAMLIT CONFIG ---
-st.set_page_config(page_title="NIFTY Option Chain", layout="wide")
+st.set_page_config(page_title="Option Chain", layout="wide")
 st.title("📈 Option Chain")
 REFRESH_INTERVAL = 60  # seconds
 
@@ -54,7 +54,7 @@ if expiry_input:
     }
 
     try:
-        # --- FETCH NIFTY LTP & CHANGE ---
+        # --- FETCH  LTP & CHANGE ---
         response = requests.get(API_URL, headers=HEADERS, verify=False, timeout=20)
         data = response.json()
         nifty_value = data.get("data", {}).get("spObj", [])
@@ -203,7 +203,7 @@ if expiry_input:
 
         with col3:
             st.markdown(f"""
-            - 🟢 Nifty 50 LTP: `{nifty_ltp:.2f}`
+            - 🟢 LTP: `{nifty_ltp:.2f}`
             - 🔄 Change: `{nifty_chg:.2f}` ({nifty_chg_pct:.2f}%)
             - ⚡ PCR: `{nifty_pcr}`
             """)
@@ -745,6 +745,7 @@ if expiry_input:
 
     except Exception as e:
         st.error(f"❌ Failed to load data: {e}")
+
 
 
 
