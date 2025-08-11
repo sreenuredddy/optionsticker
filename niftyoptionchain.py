@@ -361,7 +361,7 @@ if expiry_input:
         # The four prcOIA classification categories to display
         prcoia_categories = ["Long Bldp", "Short Covering", "Short Bldp", "Long Unwndg"]
 
-        st.markdown("### ⚡ Classified Strike Categories Using prcOIA")
+        st.markdown("### ⚡ OI Interpretation")
 
         # Display Call Option (CE) classification tables side by side
         st.markdown("#### Call Options (CE) Analysis")
@@ -737,4 +737,5 @@ if expiry_input:
 
     except Exception as e:
         st.error(f"❌ Failed to load data: {e}")
+
 
