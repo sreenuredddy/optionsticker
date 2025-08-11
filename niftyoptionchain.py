@@ -604,7 +604,7 @@ if expiry_input:
             total_pe_new_money = new_money_strikes["PE OI Chg"].sum()
 
             # === Display ===
-            st.markdown(f"### 📊 Strikes Where New Money Is Flowing (Higher OI Change than Strike)")
+            st.markdown(f"### 📊 Strikes Where New Money Is Flowing (Higher OI Change than {label} Strike)")
             if new_money_strikes.empty:
                 st.write(f"No strikes currently have OI change exceeding that at the {label.lower()} strike.")
             else:
@@ -745,6 +745,7 @@ if expiry_input:
 
     except Exception as e:
         st.error(f"❌ Failed to load data: {e}")
+
 
 
 
