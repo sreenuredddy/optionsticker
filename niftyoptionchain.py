@@ -11,7 +11,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- STREAMLIT CONFIG ---
 st.set_page_config(page_title="NIFTY Option Chain", layout="wide")
-st.title("📈 NIFTY Option Chain")
+st.title("📈 Option Chain")
 REFRESH_INTERVAL = 60  # seconds
 
 col1, col2, col5 = st.columns(3)
@@ -737,6 +737,7 @@ if expiry_input:
 
     except Exception as e:
         st.error(f"❌ Failed to load data: {e}")
+
 
 
 
