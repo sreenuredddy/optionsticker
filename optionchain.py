@@ -18,7 +18,15 @@ col1, col2, col5 = st.columns(3)
 
 with col1:
     # User input for expiry date
-    expiry_input = st.text_input("📅 Enter Expiry Date (YYYY-MM-DD)", value="2025-08-14")
+    expiry_input = st.text_input("📅 Enter Expiry Date (YYYY-MM-DD)", value="")
+        # Choose index
+    index = st.selectbox(
+        "Select Index",
+        ["NIFTY", "BANKNIFTY", "SENSEX"],
+        index=0,
+        help="Select an index or type a custom one",
+        accept_new_options=True
+    )
 
 with col5:
     # Always show the manual refresh button on a new row
@@ -35,7 +43,7 @@ if auto_refresh:
 
 if expiry_input:
     # --- API CONFIG ---
-    API_URL = f"https://nw.nuvamawealth.com/edelmw-content/content/new-options/option-chain/NFO/OPTIDX/NIFTY/{expiry_input}?screen=all"
+    API_URL = (f"https://nw.nuvamawealth.com/edelmw-content/"f"content/new-options/option-chain/NFO/OPTIDX/{index}/{expiry_input}?screen=all")
     HEADERS = {
         "Content-Type": "application/json",
         "Appidkey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHAiOjEsImZmIjoiVyIsImJkIjoid2ViLXBjIiwibmJmIjoxNTc5MjQxODMyLCJzcmMiOiJlbXRtdyIsImF2IjoiMS4wLjAuNCIsImFwcGlkIjoiNGZlNjhiNzUzNjc4NGUzNDA3YzNlY2YxOWJlN2M0YWQiLCJpc3MiOiJlbXQiLCJleHAiOjE2MTA3NzgxMzIsImlhdCI6MTU3OTI0MjEzMn0.IR-PKf1Jjr69bsERFmMeuZrZ2RafBDiTGgKA6Ygofdo",
@@ -737,6 +745,7 @@ if expiry_input:
 
     except Exception as e:
         st.error(f"❌ Failed to load data: {e}")
+
 
 
 
