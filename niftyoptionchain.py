@@ -10,16 +10,16 @@ from datetime import datetime, timedelta
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- STREAMLIT CONFIG ---
-st.set_page_config(page_title="Option Chain", layout="wide")
-st.title("📈 Option Chain")
+st.set_page_config(page_title="NIFTY Option Chain - Calls & Puts", layout="wide")
+st.title("📈 NIFTY Option Chain (Calls vs Puts)")
 REFRESH_INTERVAL = 60  # seconds
 
 col1, col2, col5 = st.columns(3)
 
 with col1:
     # User input for expiry date
-    expiry_input = st.text_input("📅 Enter Expiry Date (YYYY-MM-DD)", value="")
-        # Choose index
+    expiry_input = st.text_input("📅 Enter Expiry Date (YYYY-MM-DD)", value="2025-08-14")
+    # Choose index
     index = st.selectbox(
         "Select Index",
         ["NIFTY", "BANKNIFTY", "SENSEX"],
@@ -43,7 +43,9 @@ if auto_refresh:
 
 if expiry_input:
     # --- API CONFIG ---
+    # Construct API URL dynamically
     API_URL = (f"https://nw.nuvamawealth.com/edelmw-content/"f"content/new-options/option-chain/NFO/OPTIDX/{index}/{expiry_input}?screen=all")
+
     HEADERS = {
         "Content-Type": "application/json",
         "Appidkey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHAiOjEsImZmIjoiVyIsImJkIjoid2ViLXBjIiwibmJmIjoxNTc5MjQxODMyLCJzcmMiOiJlbXRtdyIsImF2IjoiMS4wLjAuNCIsImFwcGlkIjoiNGZlNjhiNzUzNjc4NGUzNDA3YzNlY2YxOWJlN2M0YWQiLCJpc3MiOiJlbXQiLCJleHAiOjE2MTA3NzgxMzIsImlhdCI6MTU3OTI0MjEzMn0.IR-PKf1Jjr69bsERFmMeuZrZ2RafBDiTGgKA6Ygofdo",
@@ -54,7 +56,7 @@ if expiry_input:
     }
 
     try:
-        # --- FETCH  LTP & CHANGE ---
+        # --- FETCH NIFTY LTP & CHANGE ---
         response = requests.get(API_URL, headers=HEADERS, verify=False, timeout=20)
         data = response.json()
         nifty_value = data.get("data", {}).get("spObj", [])
@@ -203,7 +205,7 @@ if expiry_input:
 
         with col3:
             st.markdown(f"""
-            - 🟢 LTP: `{nifty_ltp:.2f}`
+            - 🟢 Nifty 50 LTP: `{nifty_ltp:.2f}`
             - 🔄 Change: `{nifty_chg:.2f}` ({nifty_chg_pct:.2f}%)
             - ⚡ PCR: `{nifty_pcr}`
             """)
@@ -369,7 +371,7 @@ if expiry_input:
         # The four prcOIA classification categories to display
         prcoia_categories = ["Long Bldp", "Short Covering", "Short Bldp", "Long Unwndg"]
 
-        st.markdown("### ⚡ OI Interpretation")
+        st.markdown("### ⚡ Classified Strike Categories Using prcOIA")
 
         # Display Call Option (CE) classification tables side by side
         st.markdown("#### Call Options (CE) Analysis")
@@ -626,14 +628,14 @@ if expiry_input:
             - Total PE OI Change: `{total_pe_new_money:.0f}`
             """)
 
-
+        
 
         # --- Use the function for both Previous Close and Spot (ATM) reference strikes ---
         # Previous Close
         show_new_money_flow(filtered_df, prev_close, "Previous Close")
 
         # ATM (spot)
-        show_new_money_flow(filtered_df, nifty_ltp, "ATM (by spot)")
+        show_new_money_flow(filtered_df, nifty_ltp, "ATM (by spot NIFTY)")
 
         # --- STRADDLE CALCULATIONS ---
 
@@ -740,16 +742,244 @@ if expiry_input:
         )
         st.plotly_chart(fig, use_container_width=True)
 
+        
+        # =======================
+        import pandas as pd
+        import streamlit as st
+
+        # --- Ensure numeric columns for calculations ---
+        for col in ["CE OI Chg", "PE OI Chg", "CE Chg%", "PE Chg%", "CE Vega", "PE Vega"]:
+            filtered_df[col] = pd.to_numeric(filtered_df[col], errors='coerce').fillna(0)
+
+        # --- Aggregate totals ---
+        total_call_oi_up = filtered_df.loc[filtered_df["CE OI Chg"] > 0, "CE OI Chg"].sum()
+        total_put_oi_up  = filtered_df.loc[filtered_df["PE OI Chg"] > 0, "PE OI Chg"].sum()
+        total_call_price_up = filtered_df.loc[filtered_df["CE Chg%"] > 0, "CE Chg%"].sum()
+        total_put_price_up  = filtered_df.loc[filtered_df["PE Chg%"] > 0, "PE Chg%"].sum()
+        total_call_vega = filtered_df["CE Vega"].sum()
+        total_put_vega  = filtered_df["PE Vega"].sum()
+
+        # --- Base directional signal ---
+        if (total_call_oi_up > total_put_oi_up and
+            total_call_price_up > total_put_price_up and
+            total_call_vega > total_put_vega):
+            base_signal = "📈 Bullish Bias - OI up, Price up, Vega supports Calls"
+        elif (total_put_oi_up > total_call_oi_up and
+            total_put_price_up > total_call_price_up and
+            total_put_vega > total_call_vega):
+            base_signal = "📉 Bearish Bias - OI up, Price up, Vega supports Puts"
+        else:
+            base_signal = "⚖ Mixed / Inconclusive Signals"
+
+        # --- Vega difference per strike for gap trend ---
+        filtered_df["Vega Diff (Put - Call)"] = filtered_df["PE Vega"] - filtered_df["CE Vega"]
+
+        # --- Store and update Vega diff history in session state ---
+        if "vega_diff_history" not in st.session_state:
+            st.session_state.vega_diff_history = []
+
+        # Append current total diff and keep last 5 values
+        current_diff = total_put_vega - total_call_vega
+        st.session_state.vega_diff_history.append(current_diff)
+        if len(st.session_state.vega_diff_history) > 5:
+            st.session_state.vega_diff_history.pop(0)
+
+        # --- Analyze Vega gap trend ---
+        gap_signal = "No Trend Yet"
+        if len(st.session_state.vega_diff_history) >= 3:
+            prev_vals = st.session_state.vega_diff_history[-3:]
+            # Check if Vega diff consistently decreases by at least a gap of 2 (more negative)
+            if all(y - x <= -2 for x, y in zip(prev_vals, prev_vals[1:])):
+                gap_signal = "📈 Bullish (Vega Diff moving more negative)"
+            # Check if Vega diff consistently increases by at least a gap of 2 (more positive)
+            elif all(y - x >= 2 for x, y in zip(prev_vals, prev_vals[1:])):
+                gap_signal = "📉 Bearish (Vega Diff moving more positive)"
+            else:
+                gap_signal = "⏸ Sideways / No Clear Gap"
+
+        # --- Display overall summary ---
+        st.markdown("### 📊 Combined OI, Price, and Vega Signal with Live Vega Gap Detection")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Call OI Increase", f"{total_call_oi_up:,.0f}")
+            st.metric("Total Put OI Increase", f"{total_put_oi_up:,.0f}")
+        with col2:
+            st.metric("Total Call Price Increase %", f"{total_call_price_up:.2f}%")
+            st.metric("Total Put Price Increase %", f"{total_put_price_up:.2f}%")
+        with col3:
+            st.metric("Total Call Vega", f"{total_call_vega:.2f}")
+            st.metric("Total Put Vega", f"{total_put_vega:.2f}")
+
+        st.markdown(f"**Base Directional Signal:** {base_signal}")
+        st.markdown(f"**Live Vega Gap Movement Signal:** {gap_signal}")
+        st.caption(f"Vega Difference History (Put Vega - Call Vega): {st.session_state.vega_diff_history}")
+
+        # --- Display per-strike Vega difference and call vs put price change for detailed analysis ---
+        st.markdown("### 📈 Per-Strike Vega Difference and Price Change")
+
+        filtered_df["Call vs Put Vega"] = filtered_df.apply(
+            lambda row: "Call > Put" if row["CE Vega"] > row["PE Vega"] else ("Put > Call" if row["PE Vega"] > row["CE Vega"] else "Equal"),
+            axis=1
+        )
+
+        filtered_df["Price Change Direction"] = filtered_df.apply(
+            lambda row: "Call Price ↑" if row["CE Chg%"] > row["PE Chg%"] else ("Put Price ↑" if row["PE Chg%"] > row["CE Chg%"] else "Equal"),
+            axis=1
+        )
+
+        st.dataframe(
+            filtered_df[[
+                "Strike",
+                "CE Vega",
+                "PE Vega",
+                "Vega Diff (Put - Call)",
+                "Call vs Put Vega",
+                "CE Chg%",
+                "PE Chg%",
+                "Price Change Direction"
+            ]],
+            use_container_width=True,
+            height=400
+        )
+
+        # --- Ensure numeric conversion for OI, OI Change, and Price Change columns ---
+        # --- Ensure numeric conversion ---
+        cols = ["CE OI", "PE OI", "CE OI Chg", "PE OI Chg", "CE Chg%", "PE Chg%"]
+        for col in cols:
+            filtered_df[col] = pd.to_numeric(filtered_df[col], errors='coerce').fillna(0)
+
+        # Highest OI
+        max_ce_oi = filtered_df["CE OI"].max()
+        max_ce_oi_strikes = filtered_df[filtered_df["CE OI"] == max_ce_oi]["Strike"].tolist()
+        max_ce_oi_price_chg = filtered_df[filtered_df["CE OI"] == max_ce_oi]["CE Chg%"].iloc[0] if max_ce_oi_strikes else None
+
+        max_pe_oi = filtered_df["PE OI"].max()
+        max_pe_oi_strikes = filtered_df[filtered_df["PE OI"] == max_pe_oi]["Strike"].tolist()
+        max_pe_oi_price_chg = filtered_df[filtered_df["PE OI"] == max_pe_oi]["PE Chg%"].iloc[0] if max_pe_oi_strikes else None
+
+        # Highest Absolute OI Change (magnitude)
+        max_ce_oi_chg_abs = filtered_df["CE OI Chg"].abs().max()
+        max_ce_oi_chg_abs_strikes = filtered_df[filtered_df["CE OI Chg"].abs() == max_ce_oi_chg_abs]["Strike"].tolist()
+        actual_ce_oi_chg_abs_val = filtered_df.loc[filtered_df["CE OI Chg"].abs() == max_ce_oi_chg_abs, "CE OI Chg"].iloc[0]
+        max_ce_oi_chg_abs_price = filtered_df.loc[filtered_df["CE OI Chg"].abs() == max_ce_oi_chg_abs, "CE Chg%"].iloc[0]
+
+        max_pe_oi_chg_abs = filtered_df["PE OI Chg"].abs().max()
+        max_pe_oi_chg_abs_strikes = filtered_df[filtered_df["PE OI Chg"].abs() == max_pe_oi_chg_abs]["Strike"].tolist()
+        actual_pe_oi_chg_abs_val = filtered_df.loc[filtered_df["PE OI Chg"].abs() == max_pe_oi_chg_abs, "PE OI Chg"].iloc[0]
+        max_pe_oi_chg_abs_price = filtered_df.loc[filtered_df["PE OI Chg"].abs() == max_pe_oi_chg_abs, "PE Chg%"].iloc[0]
+
+        # Highest Positive OI Change
+        max_ce_oi_chg_pos = filtered_df["CE OI Chg"].max()
+        max_ce_oi_chg_pos_strikes = filtered_df[filtered_df["CE OI Chg"] == max_ce_oi_chg_pos]["Strike"].tolist()
+        max_ce_oi_chg_pos_price = filtered_df.loc[filtered_df["CE OI Chg"] == max_ce_oi_chg_pos, "CE Chg%"].iloc[0]
+
+        max_pe_oi_chg_pos = filtered_df["PE OI Chg"].max()
+        max_pe_oi_chg_pos_strikes = filtered_df[filtered_df["PE OI Chg"] == max_pe_oi_chg_pos]["Strike"].tolist()
+        max_pe_oi_chg_pos_price = filtered_df.loc[filtered_df["PE OI Chg"] == max_pe_oi_chg_pos, "PE Chg%"].iloc[0]
+
+        # Highest Negative OI Change
+        max_ce_oi_chg_neg = filtered_df["CE OI Chg"].min()
+        max_ce_oi_chg_neg_strikes = filtered_df[filtered_df["CE OI Chg"] == max_ce_oi_chg_neg]["Strike"].tolist()
+        max_ce_oi_chg_neg_price = filtered_df.loc[filtered_df["CE OI Chg"] == max_ce_oi_chg_neg, "CE Chg%"].iloc[0]
+
+        max_pe_oi_chg_neg = filtered_df["PE OI Chg"].min()
+        max_pe_oi_chg_neg_strikes = filtered_df[filtered_df["PE OI Chg"] == max_pe_oi_chg_neg]["Strike"].tolist()
+        max_pe_oi_chg_neg_price = filtered_df.loc[filtered_df["PE OI Chg"] == max_pe_oi_chg_neg, "PE Chg%"].iloc[0]
+
+        # Initialize session state to track last values (for alerts)
+        if "last_max_oi_strikes" not in st.session_state:
+            st.session_state["last_max_oi_strikes"] = {"CE": max_ce_oi_strikes, "PE": max_pe_oi_strikes}
+        if "last_max_oi_chg_abs_strikes" not in st.session_state:
+            st.session_state["last_max_oi_chg_abs_strikes"] = {"CE": max_ce_oi_chg_abs_strikes, "PE": max_pe_oi_chg_abs_strikes}
+        if "last_max_oi_chg_pos_strikes" not in st.session_state:
+            st.session_state["last_max_oi_chg_pos_strikes"] = {"CE": max_ce_oi_chg_pos_strikes, "PE": max_pe_oi_chg_pos_strikes}
+        if "last_max_oi_chg_neg_strikes" not in st.session_state:
+            st.session_state["last_max_oi_chg_neg_strikes"] = {"CE": max_ce_oi_chg_neg_strikes, "PE": max_pe_oi_chg_neg_strikes}
+
+        # Function to alert shift with from-to info
+        def alert_shift(category, side, old, new, val=None, price_chg=None):
+            msg = f"🚨 Highest {category} {side} strike changed: {old} → {new}"
+            if val is not None:
+                msg += f" (Value: {val:+,.0f})"
+            if price_chg is not None:
+                msg += f", Price Change: {price_chg:+.2f}%"
+            st.warning(msg)
+
+        # Alerts for shifts in Highest OI
+        if st.session_state["last_max_oi_strikes"]["CE"] != max_ce_oi_strikes:
+            alert_shift("OI", "Call", st.session_state["last_max_oi_strikes"]["CE"], max_ce_oi_strikes, max_ce_oi, max_ce_oi_price_chg)
+        if st.session_state["last_max_oi_strikes"]["PE"] != max_pe_oi_strikes:
+            alert_shift("OI", "Put", st.session_state["last_max_oi_strikes"]["PE"], max_pe_oi_strikes, max_pe_oi, max_pe_oi_price_chg)
+
+        # Alerts for shifts in Highest Absolute OI Change
+        if st.session_state["last_max_oi_chg_abs_strikes"]["CE"] != max_ce_oi_chg_abs_strikes:
+            alert_shift("Absolute OI Change", "Call", st.session_state["last_max_oi_chg_abs_strikes"]["CE"], max_ce_oi_chg_abs_strikes, actual_ce_oi_chg_abs_val, max_ce_oi_chg_abs_price)
+        if st.session_state["last_max_oi_chg_abs_strikes"]["PE"] != max_pe_oi_chg_abs_strikes:
+            alert_shift("Absolute OI Change", "Put", st.session_state["last_max_oi_chg_abs_strikes"]["PE"], max_pe_oi_chg_abs_strikes, actual_pe_oi_chg_abs_val, max_pe_oi_chg_abs_price)
+
+        # Alerts for shifts in Highest Positive OI Change
+        if st.session_state["last_max_oi_chg_pos_strikes"]["CE"] != max_ce_oi_chg_pos_strikes:
+            alert_shift("Positive OI Change", "Call", st.session_state["last_max_oi_chg_pos_strikes"]["CE"], max_ce_oi_chg_pos_strikes, max_ce_oi_chg_pos, max_ce_oi_chg_pos_price)
+        if st.session_state["last_max_oi_chg_pos_strikes"]["PE"] != max_pe_oi_chg_pos_strikes:
+            alert_shift("Positive OI Change", "Put", st.session_state["last_max_oi_chg_pos_strikes"]["PE"], max_pe_oi_chg_pos_strikes, max_pe_oi_chg_pos, max_pe_oi_chg_pos_price)
+
+        # Alerts for shifts in Highest Negative OI Change
+        if st.session_state["last_max_oi_chg_neg_strikes"]["CE"] != max_ce_oi_chg_neg_strikes:
+            alert_shift("Negative OI Change", "Call", st.session_state["last_max_oi_chg_neg_strikes"]["CE"], max_ce_oi_chg_neg_strikes, max_ce_oi_chg_neg, max_ce_oi_chg_neg_price)
+        if st.session_state["last_max_oi_chg_neg_strikes"]["PE"] != max_pe_oi_chg_neg_strikes:
+            alert_shift("Negative OI Change", "Put", st.session_state["last_max_oi_chg_neg_strikes"]["PE"], max_pe_oi_chg_neg_strikes, max_pe_oi_chg_neg, max_pe_oi_chg_neg_price)
+
+        # Update session states
+        st.session_state["last_max_oi_strikes"] = {"CE": max_ce_oi_strikes, "PE": max_pe_oi_strikes}
+        st.session_state["last_max_oi_chg_abs_strikes"] = {"CE": max_ce_oi_chg_abs_strikes, "PE": max_pe_oi_chg_abs_strikes}
+        st.session_state["last_max_oi_chg_pos_strikes"] = {"CE": max_ce_oi_chg_pos_strikes, "PE": max_pe_oi_chg_pos_strikes}
+        st.session_state["last_max_oi_chg_neg_strikes"] = {"CE": max_ce_oi_chg_neg_strikes, "PE": max_pe_oi_chg_neg_strikes}
+
+        # Display summary in your dashboard
+        st.markdown("### 📊 Highest Open Interest (OI) Strikes")
+        st.markdown(f"- Call Highest OI: {max_ce_oi_strikes} (OI: {max_ce_oi:,.0f}, Price Change: {max_ce_oi_price_chg:+.2f}%)")
+        st.markdown(f"- Put Highest OI: {max_pe_oi_strikes} (OI: {max_pe_oi:,.0f}, Price Change: {max_pe_oi_price_chg:+.2f}%)")
+
+        st.markdown("### ⚡ Highest Absolute OI Change Strikes")
+        st.markdown(f"- Call: {max_ce_oi_chg_abs_strikes} (Change: {actual_ce_oi_chg_abs_val:+,.0f}, Price Change: {max_ce_oi_chg_abs_price:+.2f}%)")
+        st.markdown(f"- Put: {max_pe_oi_chg_abs_strikes} (Change: {actual_pe_oi_chg_abs_val:+,.0f}, Price Change: {max_pe_oi_chg_abs_price:+.2f}%)")
+
+        st.markdown("### 📈 Highest Positive OI Change Strikes")
+        st.markdown(f"- Call: {max_ce_oi_chg_pos_strikes} (Change: +{max_ce_oi_chg_pos:,.0f}, Price Change: {max_ce_oi_chg_pos_price:+.2f}%)")
+        st.markdown(f"- Put: {max_pe_oi_chg_pos_strikes} (Change: +{max_pe_oi_chg_pos:,.0f}, Price Change: {max_pe_oi_chg_pos_price:+.2f}%)")
+
+        st.markdown("### 📉 Highest Negative OI Change Strikes")
+        st.markdown(f"- Call: {max_ce_oi_chg_neg_strikes} (Change: {max_ce_oi_chg_neg:,.0f}, Price Change: {max_ce_oi_chg_neg_price:+.2f}%)")
+        st.markdown(f"- Put: {max_pe_oi_chg_neg_strikes} (Change: {max_pe_oi_chg_neg:,.0f}, Price Change: {max_pe_oi_chg_neg_price:+.2f}%)")
+
+        # Assume max_pain_strike is obtained from your API data as before
+        # Example: max_pain_strike = data.get("data", {}).get("maxPn", None)
+
+        if max_pain_strike is not None:
+            # Initialize session state for previous max pain
+            if "last_max_pain_strike" not in st.session_state:
+                st.session_state["last_max_pain_strike"] = max_pain_strike
+
+            # Check if max pain has changed
+            max_pain_changed = st.session_state["last_max_pain_strike"] != max_pain_strike
+
+            # Update stored max pain strike
+            st.session_state["last_max_pain_strike"] = max_pain_strike
+
+            # Display max pain strike
+            st.markdown(f"⚡ Max Pain: `{max_pain_strike}`")
+
+            # Alert if max pain strike changed
+            if max_pain_changed:
+                st.warning(f"🚨 Max Pain strike has changed to: `{max_pain_strike}`")
+        else:
+            st.markdown("⚡ Max Pain data is not available.")
+
+
 
         st.dataframe(styled_df, use_container_width=True)
 
     except Exception as e:
         st.error(f"❌ Failed to load data: {e}")
-
-
-
-
-
-
-
 
