@@ -10,8 +10,8 @@ from datetime import datetime, timedelta
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- STREAMLIT CONFIG ---
-st.set_page_config(page_title="NIFTY Option Chain - Calls & Puts", layout="wide")
-st.title("📈 NIFTY Option Chain (Calls vs Puts)")
+st.set_page_config(page_title="Option Chain", layout="wide")
+st.title("📈 Option Chain")
 REFRESH_INTERVAL = 60  # seconds
 
 col1, col2, col5 = st.columns(3)
@@ -201,7 +201,7 @@ if expiry_input:
         max_pain_strike = data.get("data", {}).get("maxPn", None)
         nifty_pcr = data.get("data", {}).get("pcr", None)
 
-        col3, col4 = st.columns(2)
+        col3, col4, col6 = st.columns(3)
 
         with col3:
             st.markdown(f"""
@@ -349,500 +349,50 @@ if expiry_input:
             yaxis_title="vtySkw",
             hovermode="x unified"
         )
+        with col6:
+            # --- Directional recommendation ---
+            st.markdown(f"""
+            - Top Skew Strike:`{top_strike}`
+            - vtySkw:`{top_skew:.2f}`
+            - Dominant Driver:`{dominant}`
+            """)
 
-        # --- Directional recommendation ---
-        st.markdown("### 🔎 Top Skew Strike Analysis")
-        st.markdown(f"- **Top Skew Strike:** `{top_strike}`")
-        st.markdown(f"- **vtySkw:** `{top_skew:.2f}`")
-        st.markdown(f"- **Dominant Driver:** `{dominant}`")
 
         st.plotly_chart(fig, use_container_width=True)
         # --- Display table ---
-        st.dataframe(df.sort_values("vtySkw", ascending=False), use_container_width=True)
+        #st.dataframe(df.sort_values("vtySkw", ascending=False), use_container_width=True)
 
-
-
-        #ce and pe buildup
-        # Function to filter filtered_df by prcOIA category for a given option side ("CE" or "PE")
-        def filter_by_prcoia(df, side, category):
-            prcOIA_col = f"{side} prcOIA"
-            return df[df[prcOIA_col] == category][["Strike", f"{side} (OI/Chg)", f"{side} Chg%", prcOIA_col]]
-
-        # The four prcOIA classification categories to display
-        prcoia_categories = ["Long Bldp", "Short Covering", "Short Bldp", "Long Unwndg"]
-
-        st.markdown("### ⚡ Classified Strike Categories Using prcOIA")
-
-        # Display Call Option (CE) classification tables side by side
-        st.markdown("#### Call Options (CE) Analysis")
-        ce_cols = st.columns(2)
-        for i, category in enumerate(prcoia_categories):
-            with ce_cols[i % 2]:
-                df_cat = filter_by_prcoia(filtered_df, "CE", category)
-                st.markdown(f"**{category}**")
-                if df_cat.empty:
-                    st.markdown("_No strikes found._")
-                else:
-                    st.dataframe(df_cat, use_container_width=True, height=200)
-
-        # Display Put Option (PE) classification tables side by side
-        st.markdown("#### Put Options (PE) Analysis")
-        pe_cols = st.columns(2)
-        for i, category in enumerate(prcoia_categories):
-            with pe_cols[i % 2]:
-                df_cat = filter_by_prcoia(filtered_df, "PE", category)
-                st.markdown(f"**{category}**")
-                if df_cat.empty:
-                    st.markdown("_No strikes found._")
-                else:
-                    st.dataframe(df_cat, use_container_width=True, height=200)
-
-        #volume
+        #Highest volume
         # After you have 'filtered_df' DataFrame ready from your existing code
-
         # Convert CE and PE volumes to numeric for proper comparison
         filtered_df["CE Volume"] = pd.to_numeric(filtered_df["CE Volume"], errors="coerce")
         filtered_df["PE Volume"] = pd.to_numeric(filtered_df["PE Volume"], errors="coerce")
 
-        # Find maximum volumes
-        max_ce_volume = filtered_df["CE Volume"].max()
-        max_pe_volume = filtered_df["PE Volume"].max()
-
-        # Get rows with the maximum CE volume
-        max_ce_vol_strikes = filtered_df[filtered_df["CE Volume"] == max_ce_volume][["Strike", "CE Volume", "CE prcOIA", "CE LTP", "CE (OI/Chg)"]]
-
-        # Get rows with the maximum PE volume
-        max_pe_vol_strikes = filtered_df[filtered_df["PE Volume"] == max_pe_volume][["Strike", "PE Volume", "PE prcOIA", "PE LTP", "PE (OI/Chg)"]]
-
-        # Display results
-        st.markdown("## Highest Volume Strikes")
-
-        st.markdown("### Call Options (CE) with Highest Volume")
-        if not max_ce_vol_strikes.empty:
-            st.dataframe(max_ce_vol_strikes)
-        else:
-            st.write("No data available for highest Call option volume strikes.")
-
-        st.markdown("### Put Options (PE) with Highest Volume")
-        if not max_pe_vol_strikes.empty:
-            st.dataframe(max_pe_vol_strikes)
-        else:
-            st.write("No data available for highest Put option volume strikes.")
-
-        #IV Bias and Trend
-
-        # === Step 1: Convert necessary columns to numeric ===
-        numeric_cols = [
-            "CE OI Chg", "PE OI Chg", "CE Chg%", "PE Chg%",
-            "CE IV Fut @ LTP", "PE IV Fut @ LTP", "Strike"
-        ]
-        for col in numeric_cols:
-            filtered_df[col] = pd.to_numeric(filtered_df[col], errors='coerce')
-
-        # Drop NaNs in critical columns
-        filtered_df = filtered_df.dropna(subset=numeric_cols)
-
-        # === Step 2: Market Trend Inference ===
-        def infer_market_trend(row):
-            ce_oi, pe_oi = row["CE OI Chg"], row["PE OI Chg"]
-            ce_price, pe_price = row["CE Chg%"], row["PE Chg%"]
-
-            ce_oi_up, ce_oi_down = ce_oi > 0, ce_oi < 0
-            pe_oi_up, pe_oi_down = pe_oi > 0, pe_oi < 0
-            ce_price_up, ce_price_down = ce_price > 0, ce_price < 0
-            pe_price_up, pe_price_down = pe_price > 0, pe_price < 0
-
-            if ce_oi_up and pe_oi_up:
-                if ce_price_up and pe_price_down:
-                    return "Bullish : Call Long Bldp & Put Unwinding"
-                elif ce_price_down and pe_price_up:
-                    return "Bearish : Call Short Bldp & Put Long Bldp"
-                elif ce_price_up and pe_price_up:
-                    return "Indecision : (Calls and Puts Both Rising)"
-                elif ce_price_down and pe_price_down:
-                    return "Sideways : (Calls and Puts Both Falling)"
-                else:
-                    return "Mixed Bullish Signals"
-
-            elif ce_oi_up and pe_oi_down:
-                if ce_price_up and pe_price_down:
-                    return "Bullish : Long Bldp Calls & Put Unwinding"
-                elif ce_price_down and pe_price_up:
-                    return "Bearish : Short Bldp Calls & Put Long Bldp"
-                else:
-                    return "Calls Dominant, Puts Unwinding"
-
-            elif ce_oi_down and pe_oi_up:
-                if ce_price_down and pe_price_up:
-                    return "Bearish Puts Buying & Call Selling"
-                elif ce_price_up and pe_price_down:
-                    return "Bullish : Short Bldp Puts & Bullish : Short Covering Calls"
-                else:
-                    return "Puts Dominant, Calls Unwinding"
-
-            elif ce_oi_down and pe_oi_down:
-                if ce_price_up and pe_price_up:
-                    return "Long Unwinding Both Calls and Puts"
-                elif ce_price_down and pe_price_down:
-                    return "Short Covering Both Calls and Puts"
-                else:
-                    return "Mixed OI Down and Price Signals"
-
-            elif abs(ce_oi) < 1e-3 or abs(pe_oi) < 1e-3:
-                return "Low OI Change - Neutral or Low Activity"
-
-            elif abs(ce_oi) < 1e-3 and (ce_price_up or ce_price_down):
-                return "Call Price Move without OI Change (Possible Speculative)"
-
-            elif abs(pe_oi) < 1e-3 and (pe_price_up or pe_price_down):
-                return "Put Price Move without OI Change (Possible Speculative)"
-
-            else:
-                return "Unclear / Mixed Signals"
-
-        # === Step 3: Row-wise IV Skew with Mirrored Strike Matching ===
-        def rowwise_iv_skew(df, atm_strike):
-            iv_diffs = []
-            compared_pairs = []
-
-            for _, row in df.iterrows():
-                strike = row["Strike"]
-                diff = None
-                pair = None
-
-                mirror_put_strike = atm_strike + (atm_strike - strike)
-                ce_iv = row["CE IV Fut @ LTP"]
-                pe_iv_list = df.loc[df["Strike"] == mirror_put_strike, "PE IV Fut @ LTP"].values
-                if len(pe_iv_list) > 0:
-                    diff = ce_iv - pe_iv_list[0]
-                    pair = f"{strike}C vs {mirror_put_strike}P"
-
-                iv_diffs.append(diff if diff is not None else 0)
-                compared_pairs.append(pair if pair is not None else "N/A")
-
-            return pd.Series(iv_diffs), pd.Series(compared_pairs)
-
-        # === Step 4: Find ATM Strike ===
-        atm_strike = min(filtered_df["Strike"], key=lambda x: abs(x - nearest_strike))
-
-        # === Step 5: Calculate IV Differences & Avg Skew ===
-        filtered_df["IV Difference"], filtered_df["Compared Pair"] = rowwise_iv_skew(filtered_df, atm_strike)
-
-        # === Step 6: Apply Market Trend ===
-        filtered_df["Market Trend"] = filtered_df.apply(infer_market_trend, axis=1)
-        filtered_df["IV Difference"] = filtered_df["IV Difference"].round(2)
-
-        # === Step 7: Sum IV Differences Above & Below ATM ===
-        above_atm_sum = filtered_df.loc[filtered_df["Strike"] > atm_strike, "IV Difference"].sum()
-        below_atm_sum = filtered_df.loc[filtered_df["Strike"] < atm_strike, "IV Difference"].sum()
-
-        if below_atm_sum > above_atm_sum:
-            iv_bias_summary = "📈 Bullish Bias (Below ATM IV lower)"
-        elif above_atm_sum < below_atm_sum:
-            iv_bias_summary = "📉 Bearish Bias (Above ATM IV lower)"
-        else:
-            iv_bias_summary = "⚖️ Neutral Bias"
-
-        # === Step 8: Display ===
-        st.markdown("### 🔍 Market Trend + Equidistant IV Signals by Strike")
-        st.dataframe(
-            filtered_df[[
-                "Strike", "Compared Pair", "CE OI Chg", "CE Chg%", "PE OI Chg", "PE Chg%",
-                "CE IV Fut @ LTP", "PE IV Fut @ LTP", "IV Difference", "Market Trend"
-            ]].sort_values("Strike"),
-            use_container_width=True,
-            height=420
+        # Get top 3 CE and rename column
+        top3_ce_vol_strikes = (
+            filtered_df.nlargest(3, "CE Volume")[["Strike", "CE Volume", "CE prcOIA", "CE LTP", "CE (OI/Chg)"]]
+            .rename(columns={"CE prcOIA": "CE Interpretation"})
         )
+        top3_ce_vol_strikes.index = range(1, len(top3_ce_vol_strikes) + 1)
 
-        st.markdown(f"**Below ATM IV Sum:** {below_atm_sum:.2f} | **Above ATM IV Sum:** {above_atm_sum:.2f}")
-        st.markdown(f"**Overall IV Bias:** {iv_bias_summary}")
-
-
-        #New Money Flow
-        
-        def show_new_money_flow(filtered_df, reference_price, label, strike_col="Strike"):
-            # Ensure numeric columns
-            filtered_df["CE OI Chg"] = pd.to_numeric(filtered_df["CE OI Chg"], errors="coerce")
-            filtered_df["PE OI Chg"] = pd.to_numeric(filtered_df["PE OI Chg"], errors="coerce")
-
-            # Find ATM/Ref strike based on reference price
-            ref_strike = min(filtered_df[strike_col], key=lambda x: abs(x - reference_price))
-            st.markdown(f"**{label} Strike:** `{ref_strike}`")
-
-            # Get OI change at reference strike
-            ref_row = filtered_df[filtered_df[strike_col] == ref_strike]
-            ref_ce_oi_chg = ref_row["CE OI Chg"].values[0] if not ref_row.empty else 0
-            ref_pe_oi_chg = ref_row["PE OI Chg"].values[0] if not ref_row.empty else 0
-
-            # Filter for strikes with higher OI change than reference
-            new_money_strikes = filtered_df[
-                (filtered_df["CE OI Chg"].abs() > abs(ref_ce_oi_chg)) |
-                (filtered_df["PE OI Chg"].abs() > abs(ref_pe_oi_chg))
-            ].copy()
-
-            # Add side marker
-            def side_marker(row):
-                ce = abs(row["CE OI Chg"]) > abs(ref_ce_oi_chg) and row["CE OI Chg"] > 0
-                pe = abs(row["PE OI Chg"]) > abs(ref_pe_oi_chg) and row["PE OI Chg"] > 0
-                if ce and pe:
-                    return "Both"
-                elif ce:
-                    return "CE"
-                elif pe:
-                    return "PE"
-                else:
-                    return ""
-            new_money_strikes["New Money Side"] = new_money_strikes.apply(side_marker, axis=1)
-
-            # Sort
-            new_money_strikes["Max OI Chg"] = new_money_strikes[["CE OI Chg", "PE OI Chg"]].abs().max(axis=1)
-            new_money_strikes = new_money_strikes.sort_values("Max OI Chg", ascending=False)
-
-            # === Summary Calculations ===
-            total_ce_all = filtered_df["CE OI Chg"].sum()
-            total_pe_all = filtered_df["PE OI Chg"].sum()
-
-            total_ce_new_money = new_money_strikes["CE OI Chg"].sum()
-            total_pe_new_money = new_money_strikes["PE OI Chg"].sum()
-
-            # === Display ===
-            st.markdown(f"### 📊 Strikes Where New Money Is Flowing (Higher OI Change than {label} Strike)")
-            if new_money_strikes.empty:
-                st.write(f"No strikes currently have OI change exceeding that at the {label.lower()} strike.")
-            else:
-                st.dataframe(
-                    new_money_strikes[
-                        ["Strike", "CE OI Chg", "CE Chg%", "PE OI Chg", "PE Chg%", "CE prcOIA", "PE prcOIA", "New Money Side"]
-                    ],
-                    use_container_width=True,
-                    height=420
-                )
-            # Display summaries
-            st.markdown(f"""
-            **🔹 OI Change Summary (All Strikes)**  
-            - Total CE OI Change: `{total_ce_all:.0f}`  
-            - Total PE OI Change: `{total_pe_all:.0f}`  
-
-            **🔹 OI Change Summary (New Money Strikes)**  
-            - Total CE OI Change: `{total_ce_new_money:.0f}`  
-            - Total PE OI Change: `{total_pe_new_money:.0f}`
-            """)
-
-        
-
-        # --- Use the function for both Previous Close and Spot (ATM) reference strikes ---
-        # Previous Close
-        show_new_money_flow(filtered_df, prev_close, "Previous Close")
-
-        # ATM (spot)
-        show_new_money_flow(filtered_df, nifty_ltp, "ATM (by spot NIFTY)")
-
-        # --- STRADDLE CALCULATIONS ---
-
-        # Ensure numeric values for price columns
-        filtered_df["CE Open"] = pd.to_numeric(filtered_df.get("CE Open", 0), errors="coerce")
-        filtered_df["PE Open"] = pd.to_numeric(filtered_df.get("PE Open", 0), errors="coerce")
-        filtered_df["CE Prev Close"] = pd.to_numeric(filtered_df.get("CE Prev Close", 0), errors="coerce")
-        filtered_df["PE Prev Close"] = pd.to_numeric(filtered_df.get("PE Prev Close", 0), errors="coerce")
-        filtered_df["CE LTP"] = pd.to_numeric(filtered_df.get("CE LTP", 0), errors="coerce")
-        filtered_df["PE LTP"] = pd.to_numeric(filtered_df.get("PE LTP", 0), errors="coerce")
-
-        # Calculate Straddle Prices
-        filtered_df["Opening Straddle"] = filtered_df["CE Open"] + filtered_df["PE Open"]
-        filtered_df["Previous Day-End Straddle"] = filtered_df["CE Prev Close"] + filtered_df["PE Prev Close"]
-        filtered_df["Current Straddle"] = filtered_df["CE LTP"] + filtered_df["PE LTP"]
-
-        # --- Find ATM Strike (by NIFTY spot price) ---
-        atm_strike = min(filtered_df["Strike"], key=lambda x: abs(x - nifty_ltp))
-
-        # Calculate previous straddle values for inference
-        filtered_df["Prev Close Straddle"] = filtered_df["CE Prev Close"] + filtered_df["PE Prev Close"]
-
-        # Function to infer straddle directional bias based on dominant leg and straddle movement
-        def infer_straddle_direction(row, atm_strike):
-            strike = row["Strike"]
-            curr_straddle = row["Current Straddle"]
-            prev_straddle = row["Prev Close Straddle"]
-            open_straddle = row["Opening Straddle"]
-            ce_ltp = row["CE LTP"]
-            pe_ltp = row["PE LTP"]
-
-            # Check for missing data
-            if pd.isna(curr_straddle) or pd.isna(prev_straddle) or pd.isna(ce_ltp) or pd.isna(pe_ltp) or pd.isna(open_straddle):
-                return ""
-
-            straddle_change = curr_straddle - prev_straddle
-            Straddletoday_change = curr_straddle - open_straddle
-
-            # Determine dominant leg (higher premium leg)
-            dominant_leg = "CE" if ce_ltp > pe_ltp else "PE"
-
-            # Directional inference logic based on your explanation:
-            if strike > atm_strike:
-                # Dominant leg expected to be PE
-                # If straddle is decreasing because put leg drops, bullish signal
-                if straddle_change < 0 and Straddletoday_change < 0  and dominant_leg == "PE":
-                    return "Short Straddle"
-                elif straddle_change > 0 and Straddletoday_change > 0 and dominant_leg == "PE":
-                    return "Long Straddle"
-                else:
-                    return "Neutral"
-            elif strike < atm_strike:
-                # Dominant leg expected to be CE
-                # If straddle is decreasing because call leg drops, bearish signal
-                if straddle_change < 0 and Straddletoday_change < 0 and dominant_leg == "CE":
-                    return "Short Straddle"
-                elif straddle_change > 0 and Straddletoday_change > 0 and dominant_leg == "CE":
-                    return "Long Straddle"
-                else:
-                    return "Neutral"
-            else:
-                # At ATM strike, directional signal less clear
-                return "Neutral"
-
-        filtered_df["Straddle Direction"] = filtered_df.apply(lambda row: infer_straddle_direction(row, atm_strike), axis=1)
-
-        # --- Display Straddle Table with Direction ---
-        st.markdown("### 🧮 Straddle Prices and Directional Bias by Strike")
-        st.dataframe(
-            filtered_df[["Strike", "Previous Day-End Straddle", "Opening Straddle", "Current Straddle", "Straddle Direction"]],
-            use_container_width=True,
-            height = 420
+        # Get top 3 PE and rename column
+        top3_pe_vol_strikes = (
+            filtered_df.nlargest(3, "PE Volume")[["Strike", "PE Volume", "PE prcOIA", "PE LTP", "PE (OI/Chg)"]]
+            .rename(columns={"PE prcOIA": "PE Interpretation"})
         )
+        top3_pe_vol_strikes.index = range(1, len(top3_pe_vol_strikes) + 1)
 
-        # --- Optional: Plot Straddle and Directional Bias ---
-        import plotly.graph_objects as go
+        # Display results without index column
+        st.markdown("## Top 3 Highest Volume Strikes")
 
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=filtered_df["Strike"], y=filtered_df["Opening Straddle"],
-            mode="lines+markers", name="Opening"
-        ))
-        fig.add_trace(go.Scatter(
-            x=filtered_df["Strike"], y=filtered_df["Previous Day-End Straddle"],
-            mode="lines+markers", name="Day-End"
-        ))
-        fig.add_trace(go.Scatter(
-            x=filtered_df["Strike"], y=filtered_df["Current Straddle"],
-            mode="lines+markers", name="Current"
-        ))
-        # Add directional bias as text annotations on current straddle line
-        fig.add_trace(go.Scatter(
-            x=filtered_df["Strike"], y=filtered_df["Current Straddle"],
-            mode="text",
-            text=filtered_df["Straddle Direction"],
-            textposition="top center",
-            showlegend=False
-        ))
+        st.markdown("### Call Options (CE) with Highest Volumes")
+        st.dataframe(top3_ce_vol_strikes.style.hide(axis="index"), use_container_width=True)
 
-        fig.update_layout(
-            title="Straddle Values and Directional Bias by Strike",
-            xaxis_title="Strike Price",
-            yaxis_title="Straddle Price"
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        st.markdown("### Put Options (PE) with Highest Volumes")
+        st.dataframe(top3_pe_vol_strikes.style.hide(axis="index"), use_container_width=True)
 
-        
         # =======================
-        import pandas as pd
-        import streamlit as st
-
-        # --- Ensure numeric columns for calculations ---
-        for col in ["CE OI Chg", "PE OI Chg", "CE Chg%", "PE Chg%", "CE Vega", "PE Vega"]:
-            filtered_df[col] = pd.to_numeric(filtered_df[col], errors='coerce').fillna(0)
-
-        # --- Aggregate totals ---
-        total_call_oi_up = filtered_df.loc[filtered_df["CE OI Chg"] > 0, "CE OI Chg"].sum()
-        total_put_oi_up  = filtered_df.loc[filtered_df["PE OI Chg"] > 0, "PE OI Chg"].sum()
-        total_call_price_up = filtered_df.loc[filtered_df["CE Chg%"] > 0, "CE Chg%"].sum()
-        total_put_price_up  = filtered_df.loc[filtered_df["PE Chg%"] > 0, "PE Chg%"].sum()
-        total_call_vega = filtered_df["CE Vega"].sum()
-        total_put_vega  = filtered_df["PE Vega"].sum()
-
-        # --- Base directional signal ---
-        if (total_call_oi_up > total_put_oi_up and
-            total_call_price_up > total_put_price_up and
-            total_call_vega > total_put_vega):
-            base_signal = "📈 Bullish Bias - OI up, Price up, Vega supports Calls"
-        elif (total_put_oi_up > total_call_oi_up and
-            total_put_price_up > total_call_price_up and
-            total_put_vega > total_call_vega):
-            base_signal = "📉 Bearish Bias - OI up, Price up, Vega supports Puts"
-        else:
-            base_signal = "⚖ Mixed / Inconclusive Signals"
-
-        # --- Vega difference per strike for gap trend ---
-        filtered_df["Vega Diff (Put - Call)"] = filtered_df["PE Vega"] - filtered_df["CE Vega"]
-
-        # --- Store and update Vega diff history in session state ---
-        if "vega_diff_history" not in st.session_state:
-            st.session_state.vega_diff_history = []
-
-        # Append current total diff and keep last 5 values
-        current_diff = total_put_vega - total_call_vega
-        st.session_state.vega_diff_history.append(current_diff)
-        if len(st.session_state.vega_diff_history) > 5:
-            st.session_state.vega_diff_history.pop(0)
-
-        # --- Analyze Vega gap trend ---
-        gap_signal = "No Trend Yet"
-        if len(st.session_state.vega_diff_history) >= 3:
-            prev_vals = st.session_state.vega_diff_history[-3:]
-            # Check if Vega diff consistently decreases by at least a gap of 2 (more negative)
-            if all(y - x <= -2 for x, y in zip(prev_vals, prev_vals[1:])):
-                gap_signal = "📈 Bullish (Vega Diff moving more negative)"
-            # Check if Vega diff consistently increases by at least a gap of 2 (more positive)
-            elif all(y - x >= 2 for x, y in zip(prev_vals, prev_vals[1:])):
-                gap_signal = "📉 Bearish (Vega Diff moving more positive)"
-            else:
-                gap_signal = "⏸ Sideways / No Clear Gap"
-
-        # --- Display overall summary ---
-        st.markdown("### 📊 Combined OI, Price, and Vega Signal with Live Vega Gap Detection")
-
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Call OI Increase", f"{total_call_oi_up:,.0f}")
-            st.metric("Total Put OI Increase", f"{total_put_oi_up:,.0f}")
-        with col2:
-            st.metric("Total Call Price Increase %", f"{total_call_price_up:.2f}%")
-            st.metric("Total Put Price Increase %", f"{total_put_price_up:.2f}%")
-        with col3:
-            st.metric("Total Call Vega", f"{total_call_vega:.2f}")
-            st.metric("Total Put Vega", f"{total_put_vega:.2f}")
-
-        st.markdown(f"**Base Directional Signal:** {base_signal}")
-        st.markdown(f"**Live Vega Gap Movement Signal:** {gap_signal}")
-        st.caption(f"Vega Difference History (Put Vega - Call Vega): {st.session_state.vega_diff_history}")
-
-        # --- Display per-strike Vega difference and call vs put price change for detailed analysis ---
-        st.markdown("### 📈 Per-Strike Vega Difference and Price Change")
-
-        filtered_df["Call vs Put Vega"] = filtered_df.apply(
-            lambda row: "Call > Put" if row["CE Vega"] > row["PE Vega"] else ("Put > Call" if row["PE Vega"] > row["CE Vega"] else "Equal"),
-            axis=1
-        )
-
-        filtered_df["Price Change Direction"] = filtered_df.apply(
-            lambda row: "Call Price ↑" if row["CE Chg%"] > row["PE Chg%"] else ("Put Price ↑" if row["PE Chg%"] > row["CE Chg%"] else "Equal"),
-            axis=1
-        )
-
-        st.dataframe(
-            filtered_df[[
-                "Strike",
-                "CE Vega",
-                "PE Vega",
-                "Vega Diff (Put - Call)",
-                "Call vs Put Vega",
-                "CE Chg%",
-                "PE Chg%",
-                "Price Change Direction"
-            ]],
-            use_container_width=True,
-            height=400
-        )
-
+            
         # --- Ensure numeric conversion for OI, OI Change, and Price Change columns ---
         # --- Ensure numeric conversion ---
         cols = ["CE OI", "PE OI", "CE OI Chg", "PE OI Chg", "CE Chg%", "PE Chg%"]
@@ -935,48 +485,157 @@ if expiry_input:
         st.session_state["last_max_oi_chg_abs_strikes"] = {"CE": max_ce_oi_chg_abs_strikes, "PE": max_pe_oi_chg_abs_strikes}
         st.session_state["last_max_oi_chg_pos_strikes"] = {"CE": max_ce_oi_chg_pos_strikes, "PE": max_pe_oi_chg_pos_strikes}
         st.session_state["last_max_oi_chg_neg_strikes"] = {"CE": max_ce_oi_chg_neg_strikes, "PE": max_pe_oi_chg_neg_strikes}
+        # === Display Summary in Three Columns ===
+        col1, col2 = st.columns(2)
 
-        # Display summary in your dashboard
-        st.markdown("### 📊 Highest Open Interest (OI) Strikes")
-        st.markdown(f"- Call Highest OI: {max_ce_oi_strikes} (OI: {max_ce_oi:,.0f}, Price Change: {max_ce_oi_price_chg:+.2f}%)")
-        st.markdown(f"- Put Highest OI: {max_pe_oi_strikes} (OI: {max_pe_oi:,.0f}, Price Change: {max_pe_oi_price_chg:+.2f}%)")
+        # Column 1: Highest OI
+        with col1:
+            st.markdown("### 📊 Highest OI")
+            st.write(f"**Call:** {max_ce_oi_strikes}  ")
+            st.write(f"OI: {max_ce_oi:,.0f}, Price Chg: {max_ce_oi_price_chg:+.2f}%")
+            st.write(f"**Put:** {max_pe_oi_strikes}  ")
+            st.write(f"OI: {max_pe_oi:,.0f}, Price Chg: {max_pe_oi_price_chg:+.2f}%")
+            st.markdown("### ⚡ Highest Abs OI Chg")
+            st.write(f"**Call:** {max_ce_oi_chg_abs_strikes}  ")
+            st.write(f"Chg: {actual_ce_oi_chg_abs_val:+,.0f}, Price Chg: {max_ce_oi_chg_abs_price:+.2f}%")
+            st.write(f"**Put:** {max_pe_oi_chg_abs_strikes}  ")
+            st.write(f"Chg: {actual_pe_oi_chg_abs_val:+,.0f}, Price Chg: {max_pe_oi_chg_abs_price:+.2f}%")
 
-        st.markdown("### ⚡ Highest Absolute OI Change Strikes")
-        st.markdown(f"- Call: {max_ce_oi_chg_abs_strikes} (Change: {actual_ce_oi_chg_abs_val:+,.0f}, Price Change: {max_ce_oi_chg_abs_price:+.2f}%)")
-        st.markdown(f"- Put: {max_pe_oi_chg_abs_strikes} (Change: {actual_pe_oi_chg_abs_val:+,.0f}, Price Change: {max_pe_oi_chg_abs_price:+.2f}%)")
+        # Column 3: Highest Positive & Negative OI Change + Max Pain
+        with col2:
+            st.markdown("### 📈 Highest + / 📉 Highest - OI Chg")
+            st.write(f"**Max + Call:** {max_ce_oi_chg_pos_strikes}  ")
+            st.write(f"+{max_ce_oi_chg_pos:,.0f}, Price Chg: {max_ce_oi_chg_pos_price:+.2f}%")
+            st.write(f"**Max + Put:** {max_pe_oi_chg_pos_strikes}  ")
+            st.write(f"+{max_pe_oi_chg_pos:,.0f}, Price Chg: {max_pe_oi_chg_pos_price:+.2f}%")
+            st.write(f"**Max - Call:** {max_ce_oi_chg_neg_strikes}  ")
+            st.write(f"{max_ce_oi_chg_neg:,.0f}, Price Chg: {max_ce_oi_chg_neg_price:+.2f}%")
+            st.write(f"**Max - Put:** {max_pe_oi_chg_neg_strikes}  ")
+            st.write(f"{max_pe_oi_chg_neg:,.0f}, Price Chg: {max_pe_oi_chg_neg_price:+.2f}%")
 
-        st.markdown("### 📈 Highest Positive OI Change Strikes")
-        st.markdown(f"- Call: {max_ce_oi_chg_pos_strikes} (Change: +{max_ce_oi_chg_pos:,.0f}, Price Change: {max_ce_oi_chg_pos_price:+.2f}%)")
-        st.markdown(f"- Put: {max_pe_oi_chg_pos_strikes} (Change: +{max_pe_oi_chg_pos:,.0f}, Price Change: {max_pe_oi_chg_pos_price:+.2f}%)")
+            if max_pain_strike is not None:
+                st.markdown(f"**⚡ Max Pain:** `{max_pain_strike}`")
 
-        st.markdown("### 📉 Highest Negative OI Change Strikes")
-        st.markdown(f"- Call: {max_ce_oi_chg_neg_strikes} (Change: {max_ce_oi_chg_neg:,.0f}, Price Change: {max_ce_oi_chg_neg_price:+.2f}%)")
-        st.markdown(f"- Put: {max_pe_oi_chg_neg_strikes} (Change: {max_pe_oi_chg_neg:,.0f}, Price Change: {max_pe_oi_chg_neg_price:+.2f}%)")
+        # New Money
 
-        # Assume max_pain_strike is obtained from your API data as before
-        # Example: max_pain_strike = data.get("data", {}).get("maxPn", None)
+        # ==========================
+        # 📊 NEW MONEY FLOW FUNCTION
+        # ==========================
+        def show_new_money_flow_overall_split(filtered_df, top_n=None, strike_col="Strike"):
+            # --- Ensure numeric columns ---
+            filtered_df["CE OI"] = pd.to_numeric(filtered_df["CE OI"], errors="coerce")
+            filtered_df["PE OI"] = pd.to_numeric(filtered_df["PE OI"], errors="coerce")
+            filtered_df["CE OI Chg"] = pd.to_numeric(filtered_df["CE OI Chg"], errors="coerce")
+            filtered_df["PE OI Chg"] = pd.to_numeric(filtered_df["PE OI Chg"], errors="coerce")
+            filtered_df["CE Chg%"] = pd.to_numeric(filtered_df["CE Chg%"], errors="coerce")
+            filtered_df["PE Chg%"] = pd.to_numeric(filtered_df["PE Chg%"], errors="coerce")
 
-        if max_pain_strike is not None:
-            # Initialize session state for previous max pain
-            if "last_max_pain_strike" not in st.session_state:
-                st.session_state["last_max_pain_strike"] = max_pain_strike
+            # ---- Prepare CE table ----
+            ce_df = filtered_df[[strike_col, "CE OI", "CE OI Chg", "CE Chg%", "CE prcOIA"]].copy()
+            ce_df = ce_df.rename(columns={
+                "CE OI": "OI",
+                "CE OI Chg": "OI Chg",
+                "CE Chg%": "Chg%",
+                "CE prcOIA": "Interpretation"
+            })
+            ce_df = ce_df.sort_values("OI Chg", ascending=False)
+            if top_n:
+                ce_df = ce_df.head(top_n)
 
-            # Check if max pain has changed
-            max_pain_changed = st.session_state["last_max_pain_strike"] != max_pain_strike
+            # ---- Prepare PE table ----
+            pe_df = filtered_df[[strike_col, "PE OI", "PE OI Chg", "PE Chg%", "PE prcOIA"]].copy()
+            pe_df = pe_df.rename(columns={
+                "PE OI": "OI",
+                "PE OI Chg": "OI Chg",
+                "PE Chg%": "Chg%",
+                "PE prcOIA": "Interpretation"
+            })
+            pe_df = pe_df.sort_values("OI Chg", ascending=False)
+            if top_n:
+                pe_df = pe_df.head(top_n)
 
-            # Update stored max pain strike
-            st.session_state["last_max_pain_strike"] = max_pain_strike
+            # ---- Display side-by-side ----
+            st.subheader("📊 New Money Flow - Overall (Separate for CE & PE)")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("### 🟢 Call Options (CE)")
+                st.dataframe(ce_df.reset_index(drop=True), use_container_width=True)
+            with col2:
+                st.markdown("### 🔴 Put Options (PE)")
+                st.dataframe(pe_df.reset_index(drop=True), use_container_width=True)
 
-            # Display max pain strike
-            st.markdown(f"⚡ Max Pain: `{max_pain_strike}`")
+            # ---- Totals ----
+            total_ce_all_oi = filtered_df["CE OI"].sum()
+            total_pe_all_oi = filtered_df["PE OI"].sum()
+            total_ce_all_chg = filtered_df["CE OI Chg"].sum()
+            total_pe_all_chg = filtered_df["PE OI Chg"].sum()
 
-            # Alert if max pain strike changed
-            if max_pain_changed:
-                st.warning(f"🚨 Max Pain strike has changed to: `{max_pain_strike}`")
-        else:
-            st.markdown("⚡ Max Pain data is not available.")
+            # ---- Summary ----
+            st.markdown("## 📌 OI & OI Change Summary")
+            scol1, scol2 = st.columns(2)
+            with scol1:
+                st.markdown(f"**Total CE OI (All Strikes)** `{total_ce_all_oi:,.0f}`")
+                st.markdown(f"**Total CE OI Change (All Strikes)** `{total_ce_all_chg:+,.0f}`")
+            with scol2:
+                st.markdown(f"**Total PE OI (All Strikes)** `{total_pe_all_oi:,.0f}`")
+                st.markdown(f"**Total PE OI Change (All Strikes)** `{total_pe_all_chg:+,.0f}`")
 
 
+        # ==========================
+        # 📌 CALL FUNCTION
+        # ==========================
+        # Show top 10 New Money Flow rows by default
+        show_new_money_flow_overall_split(filtered_df, top_n=10)
+
+                #Straddle
+        import plotly.graph_objects as go
+
+        # Prepare data for straddle chart (average of Call and Put prices)
+        strikes = filtered_df["Strike"]
+        ce_prev_close = pd.to_numeric(filtered_df["CE Prev Close"], errors="coerce")
+        pe_prev_close = pd.to_numeric(filtered_df["PE Prev Close"], errors="coerce")
+        straddle_prev_close = (ce_prev_close + pe_prev_close) 
+
+        ce_open = pd.to_numeric(filtered_df["CE Open"], errors="coerce")
+        pe_open = pd.to_numeric(filtered_df["PE Open"], errors="coerce")
+        straddle_open = (ce_open + pe_open) 
+
+        ce_ltp = pd.to_numeric(filtered_df["CE LTP"], errors="coerce")
+        pe_ltp = pd.to_numeric(filtered_df["PE LTP"], errors="coerce")
+        straddle_ltp = (ce_ltp + pe_ltp)
+
+        fig_straddle = go.Figure()
+
+        fig_straddle.add_trace(go.Scatter(
+            x=strikes,
+            y=straddle_prev_close,
+            mode="lines+markers",
+            name="Straddle Prev Close"
+        ))
+
+        fig_straddle.add_trace(go.Scatter(
+            x=strikes,
+            y=straddle_open,
+            mode="lines+markers",
+            name="Straddle Open"
+        ))
+
+        fig_straddle.add_trace(go.Scatter(
+            x=strikes,
+            y=straddle_ltp,
+            mode="lines+markers",
+            name="Straddle LTP"
+        ))
+
+        fig_straddle.update_layout(
+            title="Straddle Chart (Mean of CE and PE) - Prev Close, Open, LTP",
+            xaxis_title="Strike Price",
+            yaxis_title="Price",
+            hovermode="x unified"
+        )
+
+        st.plotly_chart(fig_straddle, use_container_width=True)
+        
 
         st.dataframe(styled_df, use_container_width=True)
 
